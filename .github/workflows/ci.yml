@@ -9,6 +9,7 @@ env:
   NODE_VERSION: "20"
 
 jobs:
+  # ── Backend ─────────────────────────────────────────
   backend-lint:
     name: Backend Lint
     runs-on: ubuntu-latest
@@ -20,6 +21,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
+          cache: true
           cache-dependency-path: backend/go.sum
       - run: go vet ./...
 
@@ -34,9 +36,11 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
+          cache: true
           cache-dependency-path: backend/go.sum
       - run: go test ./handlers/ -v -count=1 -timeout 120s
 
+  # ── Frontend ────────────────────────────────────────
   frontend-check:
     name: Frontend Typecheck
     runs-on: ubuntu-latest
@@ -52,3 +56,51 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
       - run: npx tsc --noEmit
+
+  frontend-audit:
+    name: Frontend Security Audit
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm audit --audit-level=high
+        continue-on-error: true
+
+  # ── Security Scanning ───────────────────────────────
+  scan-backend:
+    name: Scan Backend Dockerfile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'config'
+          scan-ref: 'backend'
+          format: 'table'
+          exit-code: '1'
+          severity: 'CRITICAL,HIGH'
+        continue-on-error: true
+
+  scan-frontend:
+    name: Scan Frontend Dockerfile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'config'
+          scan-ref: 'frontend'
+          format: 'table'
+          exit-code: '1'
+          severity: 'CRITICAL,HIGH'
+        continue-on-error: true
