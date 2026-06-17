@@ -1,0 +1,31 @@
+name: "Darakub Health Check"
+description: "Verify a deployed service is healthy"
+
+inputs:
+  url:
+    description: "Full URL to check"
+    required: true
+  retries:
+    description: "Number of retries"
+    default: "5"
+  delay:
+    description: "Seconds between retries"
+    default: "5"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Health check
+      shell: bash
+      run: |
+        echo "Checking health at ${{ inputs.url }}..."
+        for i in $(seq 1 ${{ inputs.retries }}); do
+          if curl -sf "${{ inputs.url }}" > /dev/null 2>&1; then
+            echo "Health check passed on attempt $i"
+            exit 0
+          fi
+          echo "Attempt $i/${{ inputs.retries }} failed, retrying in ${{ inputs.delay }}s..."
+          sleep ${{ inputs.delay }}
+        done
+        echo "::error::Health check failed after ${{ inputs.retries }} attempts"
+        exit 1
