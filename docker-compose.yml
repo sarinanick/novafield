@@ -9,6 +9,7 @@ services:
     environment:
       - PORT=3001
       - NODE_ENV=production
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://localhost:3001}
       - SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID:-}
       - SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET:-}
       - SPOTIFY_REDIRECT_URI=${SPOTIFY_REDIRECT_URI:-http://localhost:3001/api/v1/spotify/callback}
@@ -32,6 +33,11 @@ services:
       start_period: 10s
     networks:
       - novafield
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
 
   frontend:
     build:
@@ -63,6 +69,11 @@ services:
       start_period: 15s
     networks:
       - novafield
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
 
 volumes:
   backend-data:
