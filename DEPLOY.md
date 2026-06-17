@@ -601,6 +601,33 @@ ss -tlnp | grep -E '300[01]'
 | API Key | `e1d53948-813b-4712-b68d-e7e032e4ed22` |
 | API Base | `https://api.darakub.com` |
 
+### Pipeline Architecture
+
+```
+Push to main
+    │
+    ├──→ [backend-lint]     go vet
+    ├──→ [backend-test]     go test ./handlers/
+    ├──→ [frontend-check]   tsc --noEmit
+    │         │
+    │    (all pass)
+    │         │
+    ├──→ [build-backend]    Docker build + cache
+    ├──→ [build-frontend]   Docker build + cache
+    │         │
+    │    (images ready)
+    │         │
+    ├──→ [deploy-backend]   Push → Darakub API → Health check
+    │         │
+    │    (backend healthy)
+    │         │
+    ├──→ [deploy-frontend]  Push → Darakub API → Health check
+    │         │
+    │    (all done)
+    │         │
+    └──→ [summary]          Deployment report
+```
+
 ### Authentication Header
 
 All Darakub API requests must include:
@@ -647,6 +674,27 @@ Configure these in GitHub → Settings → Secrets and variables → Actions →
 | `NEXT_PUBLIC_WS_URL` | `wss://api.novafield.yourdomain.com` | WebSocket URL for frontend |
 | `FRONTEND_URL` | `https://novafield.yourdomain.com` | Frontend URL for backend CORS |
 | `CORS_ORIGINS` | `https://novafield.yourdomain.com,https://www.novafield.yourdomain.com` | Allowed CORS origins |
+
+### All Required GitHub Secrets
+
+| Secret | Description | Where to find |
+|--------|-------------|---------------|
+| `DARAKUB_API_KEY` | Darakub API key | Darakub dashboard → Settings → API |
+| `DARAKUB_REGISTRY_PASS` | Container registry password | Darakub dashboard → Settings → Registry |
+| `SPOTIFY_CLIENT_ID` | Spotify OAuth client ID | Spotify Developer Dashboard |
+| `SPOTIFY_CLIENT_SECRET` | Spotify OAuth client secret | Spotify Developer Dashboard |
+
+### All Required GitHub Variables
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `DARAKUB_BACKEND_URL` | Backend public URL | `https://api.novafield.com` |
+| `DARAKUB_FRONTEND_URL` | Frontend public URL | `https://novafield.com` |
+| `NEXT_PUBLIC_API_URL` | API URL for frontend | `https://api.novafield.com/api/v1` |
+| `NEXT_PUBLIC_WS_URL` | WebSocket URL for frontend | `wss://api.novafield.com` |
+| `FRONTEND_URL` | Frontend URL for backend CORS | `https://novafield.com` |
+| `CORS_ORIGINS` | Allowed CORS origins | `https://novafield.com,https://www.novafield.com` |
+| `SPOTIFY_REDIRECT_URI` | Spotify callback URL | `https://api.novafield.com/api/v1/spotify/callback` |
 
 ### CI/CD Pipeline Stages
 
