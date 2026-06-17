@@ -5,6 +5,8 @@
 
 An AI freelancer marketplace with virtual coworking space.
 
+Built with Go backend, Next.js frontend, and Darakub PaaS.
+
 ## Architecture
 
 ```
