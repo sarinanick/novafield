@@ -1,4 +1,4 @@
-# NovaField AI — Dokploy Deployment Guide
+# NovaField AI — Deployment Guide (Dokploy + Darakub)
 
 ## Table of Contents
 
@@ -587,6 +587,109 @@ ss -tlnp | grep -E '300[01]'
 - [ ] Frontend resource limits set (0.5 CPU / 256M RAM)
 - [ ] Log rotation configured (max-size: 10m, max-file: 5)
 - [ ] Health checks enabled (interval: 30s)
+
+---
+
+## Darakub Deployment (GitHub Actions CI/CD)
+
+[Darakub](https://darakub.com) is a PaaS platform that deploys containerized apps using Docker and Kubernetes. NovaField uses GitHub Actions to automatically build and deploy to Darakub on every push to `main`.
+
+### API Key
+
+| Field | Value |
+|-------|-------|
+| API Key | `e1d53948-813b-4712-b68d-e7e032e4ed22` |
+| API Base | `https://api.darakub.com` |
+
+### Authentication Header
+
+All Darakub API requests must include:
+
+```
+Authorization: Api-key e1d53948-813b-4712-b68d-e7e032e4ed22
+```
+
+### Example cURL
+
+```bash
+# Check service status
+curl -s -X GET "https://api.darakub.com/api/v1/services/novafield-backend/status" \
+  -H "Authorization: Api-key e1d53948-813b-4712-b68d-e7e032e4ed22"
+
+# Trigger deployment
+curl -s -X POST "https://api.darakub.com/api/v1/services/deploy" \
+  -H "Authorization: Api-key e1d53948-813b-4712-b68d-e7e032e4ed22" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "serviceName": "novafield-backend",
+    "image": "registry.darakub.com/novafield/backend:latest"
+  }'
+```
+
+### GitHub Actions Secrets
+
+Configure these in GitHub → Settings → Secrets and variables → Actions:
+
+| Secret | Value | Description |
+|--------|-------|-------------|
+| `DARAKUB_API_KEY` | `e1d53948-813b-4712-b68d-e7e032e4ed22` | Darakub API key |
+| `DARAKUB_REGISTRY_PASS` | (your registry password) | Docker registry auth |
+
+### GitHub Actions Variables
+
+Configure these in GitHub → Settings → Secrets and variables → Actions → Variables:
+
+| Variable | Example Value | Description |
+|----------|---------------|-------------|
+| `DARAKUB_BACKEND_URL` | `https://api.novafield.yourdomain.com` | Backend public URL |
+| `DARAKUB_FRONTEND_URL` | `https://novafield.yourdomain.com` | Frontend public URL |
+| `NEXT_PUBLIC_API_URL` | `https://api.novafield.yourdomain.com/api/v1` | API URL for frontend |
+| `NEXT_PUBLIC_WS_URL` | `wss://api.novafield.yourdomain.com` | WebSocket URL for frontend |
+| `FRONTEND_URL` | `https://novafield.yourdomain.com` | Frontend URL for backend CORS |
+| `CORS_ORIGINS` | `https://novafield.yourdomain.com,https://www.novafield.yourdomain.com` | Allowed CORS origins |
+
+### CI/CD Pipeline Stages
+
+The pipeline (`.github/workflows/deploy.yml`) runs:
+
+1. **Backend Lint** — `go vet ./...`
+2. **Backend Test** — `go test ./handlers/ -v -count=1 -timeout 120s`
+3. **Frontend Check** — `npx tsc --noEmit`
+4. **Build Docker Images** — Parallel build of backend + frontend images
+5. **Deploy Backend** — Push image to registry + deploy via Darakub API
+6. **Deploy Frontend** — Push image to registry + deploy via Darakub API (waits for backend)
+7. **Notify** — Deployment summary in GitHub Actions
+
+### Deploy Trigger
+
+- **Push to `main`** → Full deploy (lint → test → build → deploy)
+- **Pull request** → Lint + test only (no deploy)
+
+### Manual Deploy
+
+```bash
+# Deploy backend manually
+curl -s -X POST "https://api.darakub.com/api/v1/services/deploy" \
+  -H "Authorization: Api-key e1d53948-813b-4712-b68d-e7e032e4ed22" \
+  -H "Content-Type: application/json" \
+  -d '{"serviceName": "novafield-backend", "image": "registry.darakub.com/novafield/backend:latest"}'
+
+# Deploy frontend manually
+curl -s -X POST "https://api.darakub.com/api/v1/services/deploy" \
+  -H "Authorization: Api-key e1d53948-813b-4712-b68d-e7e032e4ed22" \
+  -H "Content-Type: application/json" \
+  -d '{"serviceName": "novafield-frontend", "image": "registry.darakub.com/novafield/frontend:latest"}'
+```
+
+### Check Deployment Status
+
+```bash
+curl -s -X GET "https://api.darakub.com/api/v1/services/novafield-backend/status" \
+  -H "Authorization: Api-key e1d53948-813b-4712-b68d-e7e032e4ed22"
+
+curl -s -X GET "https://api.darakub.com/api/v1/services/novafield-frontend/status" \
+  -H "Authorization: Api-key e1d53948-813b-4712-b68d-e7e032e4ed22"
+```
 
 ---
 
