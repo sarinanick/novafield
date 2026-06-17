@@ -1,0 +1,83 @@
+name: "Darakub Deploy"
+description: "Deploy a service to Darakub via API"
+
+inputs:
+  service-name:
+    description: "Darakub service name"
+    required: true
+  image:
+    description: "Docker image to deploy"
+    required: true
+  api-key:
+    description: "Darakub API key"
+    required: true
+  api-url:
+    description: "Darakub API base URL"
+    default: "https://api.darakub.com"
+  env-vars:
+    description: "JSON object of environment variables"
+    default: "{}"
+  cpu:
+    description: "CPU limit"
+    default: "1000m"
+  memory:
+    description: "Memory limit"
+    default: "512Mi"
+  health-path:
+    description: "Health check path"
+    default: "/api/v1/health"
+  health-port:
+    description: "Health check port"
+    default: "3001"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Deploy to Darakub
+      shell: bash
+      run: |
+        echo "Deploying ${{ inputs.service-name }} with image ${{ inputs.image }}..."
+        RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "${{ inputs.api-url }}/api/v1/services/deploy" \
+          -H "Authorization: Api-key ${{ inputs.api-key }}" \
+          -H "Content-Type: application/json" \
+          -d '{
+            "serviceName": "${{ inputs.service-name }}",
+            "image": "${{ inputs.image }}",
+            "env": ${{ inputs.env-vars }},
+            "resources": {
+              "cpu": "${{ inputs.cpu }}",
+              "memory": "${{ inputs.memory }}"
+            },
+            "healthCheck": {
+              "path": "${{ inputs.health-path }}",
+              "port": ${{ inputs.health-port }},
+              "interval": 30
+            }
+          }')
+        HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+        BODY=$(echo "$RESPONSE" | sed '$d')
+        echo "HTTP Status: $HTTP_CODE"
+        echo "Response: $BODY"
+        if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
+          echo "::error::Deploy failed with HTTP $HTTP_CODE"
+          exit 1
+        fi
+        echo "Deploy initiated successfully"
+
+    - name: Wait for deployment ready
+      shell: bash
+      run: |
+        echo "Waiting for ${{ inputs.service-name }} to be ready..."
+        for i in $(seq 1 30); do
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: Api-key ${{ inputs.api-key }}" \
+            "${{ inputs.api-url }}/api/v1/services/${{ inputs.service-name }}/status" || true)
+          if [ "$STATUS" = "200" ]; then
+            echo "Service is ready!"
+            exit 0
+          fi
+          echo "Attempt $i/30 — status: $STATUS"
+          sleep 10
+        done
+        echo "::error::Deployment timed out after 5 minutes"
+        exit 1
