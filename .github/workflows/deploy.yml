@@ -86,7 +86,7 @@ jobs:
           cache-from: type=gha,scope=backend
           cache-to: type=gha,mode=max,scope=backend
       - run: docker save novafield-backend:${{ github.sha }} | gzip > /tmp/backend.tar.gz
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: image-backend
           path: /tmp/backend.tar.gz
@@ -108,7 +108,7 @@ jobs:
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
       - run: docker save novafield-frontend:${{ github.sha }} | gzip > /tmp/frontend.tar.gz
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: image-frontend
           path: /tmp/frontend.tar.gz
