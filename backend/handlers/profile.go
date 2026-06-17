@@ -72,13 +72,27 @@ func UpdateProfileHandler(w http.ResponseWriter, r *http.Request) {
 	d.Mu.Lock()
 	for i := range d.Users {
 		if d.Users[i].ID == user.ID {
-			d.Users[i].Name = req.Name
-			d.Users[i].Bio = req.Bio
-			d.Users[i].Skills = req.Skills
-			d.Users[i].HourlyRate = req.HourlyRate
-			d.Users[i].Location = req.Location
-			d.Users[i].Website = req.Website
-			d.Users[i].Avatar = req.Avatar
+			if req.Name != "" {
+				d.Users[i].Name = req.Name
+			}
+			if req.Bio != "" {
+				d.Users[i].Bio = req.Bio
+			}
+			if req.Skills != nil {
+				d.Users[i].Skills = req.Skills
+			}
+			if req.HourlyRate > 0 {
+				d.Users[i].HourlyRate = req.HourlyRate
+			}
+			if req.Location != "" {
+				d.Users[i].Location = req.Location
+			}
+			if req.Website != "" {
+				d.Users[i].Website = req.Website
+			}
+			if req.Avatar != "" {
+				d.Users[i].Avatar = req.Avatar
+			}
 			break
 		}
 	}

@@ -15,8 +15,9 @@ import (
 )
 
 var (
-	db   *FileDB
-	once sync.Once
+	db      *FileDB
+	once    sync.Once
+	saveMu  sync.Mutex
 )
 
 type FileDB struct {
@@ -95,10 +96,12 @@ func (d *FileDB) load() {
 }
 
 func (d *FileDB) Save() {
-	d.Mu.RLock()
-	defer d.Mu.RUnlock()
+	saveMu.Lock()
+	defer saveMu.Unlock()
 
+	d.Mu.RLock()
 	data, err := json.MarshalIndent(d, "", "  ")
+	d.Mu.RUnlock()
 	if err != nil {
 		log.Printf("Error marshaling database: %v", err)
 		return

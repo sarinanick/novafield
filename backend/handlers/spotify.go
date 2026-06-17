@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"novafield-api/database"
 	"novafield-api/models"
+	"novafield-api/store"
 	"os"
 	"strings"
 	"time"
@@ -37,11 +38,17 @@ func getSpotifyClientSecret() string {
 }
 
 func getSpotifyRedirectURI() string {
-	uri := os.Getenv("SPOTIFY_REDIRECT_URI")
-	if uri == "" {
-		uri = "http://localhost:3001/api/v1/spotify/callback"
+	if uri := os.Getenv("SPOTIFY_REDIRECT_URI"); uri != "" {
+		return uri
 	}
-	return uri
+	return "http://localhost:3001/api/v1/spotify/callback"
+}
+
+func getFrontendURL() string {
+	if url := os.Getenv("FRONTEND_URL"); url != "" {
+		return url
+	}
+	return "http://localhost:3000"
 }
 
 func SpotifyAuthHandler(w http.ResponseWriter, r *http.Request) {
@@ -57,7 +64,7 @@ func SpotifyAuthHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	state := base64.URLEncoding.EncodeToString([]byte(user.ID))
+	state := base64.URLEncoding.EncodeToString([]byte(user.ID + ":" + store.NewID()))
 	redirectURI := getSpotifyRedirectURI()
 
 	params := url.Values{}
@@ -77,21 +84,22 @@ func SpotifyCallbackHandler(w http.ResponseWriter, r *http.Request) {
 	errParam := r.URL.Query().Get("error")
 
 	if errParam != "" {
-		http.Redirect(w, r, "http://localhost:3000/world?spotify=error", http.StatusTemporaryRedirect)
+		http.Redirect(w, r, getFrontendURL()+"/world?spotify=error", http.StatusTemporaryRedirect)
 		return
 	}
 
 	if code == "" || state == "" {
-		http.Redirect(w, r, "http://localhost:3000/world?spotify=error", http.StatusTemporaryRedirect)
+		http.Redirect(w, r, getFrontendURL()+"/world?spotify=error", http.StatusTemporaryRedirect)
 		return
 	}
 
 	userIDBytes, err := base64.URLEncoding.DecodeString(state)
 	if err != nil {
-		http.Redirect(w, r, "http://localhost:3000/world?spotify=error", http.StatusTemporaryRedirect)
+		http.Redirect(w, r, getFrontendURL()+"/world?spotify=error", http.StatusTemporaryRedirect)
 		return
 	}
-	userID := string(userIDBytes)
+	userIDParts := strings.SplitN(string(userIDBytes), ":", 2)
+	userID := userIDParts[0]
 
 	clientID := getSpotifyClientID()
 	clientSecret := getSpotifyClientSecret()
@@ -104,7 +112,7 @@ func SpotifyCallbackHandler(w http.ResponseWriter, r *http.Request) {
 
 	req, err := http.NewRequest("POST", spotifyTokenURL, strings.NewReader(data.Encode()))
 	if err != nil {
-		http.Redirect(w, r, "http://localhost:3000/world?spotify=error", http.StatusTemporaryRedirect)
+		http.Redirect(w, r, getFrontendURL()+"/world?spotify=error", http.StatusTemporaryRedirect)
 		return
 	}
 
@@ -115,7 +123,7 @@ func SpotifyCallbackHandler(w http.ResponseWriter, r *http.Request) {
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		http.Redirect(w, r, "http://localhost:3000/world?spotify=error", http.StatusTemporaryRedirect)
+		http.Redirect(w, r, getFrontendURL()+"/world?spotify=error", http.StatusTemporaryRedirect)
 		return
 	}
 	defer resp.Body.Close()
@@ -127,7 +135,7 @@ func SpotifyCallbackHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil || tokenResp.AccessToken == "" {
-		http.Redirect(w, r, "http://localhost:3000/world?spotify=error", http.StatusTemporaryRedirect)
+		http.Redirect(w, r, getFrontendURL()+"/world?spotify=error", http.StatusTemporaryRedirect)
 		return
 	}
 
@@ -145,7 +153,7 @@ func SpotifyCallbackHandler(w http.ResponseWriter, r *http.Request) {
 	d.Mu.Unlock()
 	d.Save()
 
-	http.Redirect(w, r, "http://localhost:3000/world?spotify=connected", http.StatusTemporaryRedirect)
+	http.Redirect(w, r, getFrontendURL()+"/world?spotify=connected", http.StatusTemporaryRedirect)
 }
 
 func refreshSpotifyToken(user *models.User) (string, error) {

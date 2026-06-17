@@ -3,16 +3,20 @@ package store
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"math"
 	"novafield-api/database"
 	"novafield-api/models"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
 )
+
+var tokenMu sync.RWMutex
 
 var DB = &models.DB{
 	Favorites: make(map[string]map[string]bool),
@@ -28,7 +32,10 @@ func NewID() string {
 }
 
 func HashPassword(p string) string {
-	hash, _ := bcrypt.GenerateFromPassword([]byte(p), bcrypt.DefaultCost)
+	hash, err := bcrypt.GenerateFromPassword([]byte(p), bcrypt.DefaultCost)
+	if err != nil {
+		panic(fmt.Sprintf("bcrypt: %v", err))
+	}
 	return string(hash)
 }
 
@@ -42,18 +49,24 @@ func Now() string {
 
 func GenerateToken(userID, email, role string) string {
 	token := NewID()
+	tokenMu.Lock()
 	DB.Tokens[token] = models.TokenEntry{
 		UserID:    userID,
 		ExpiresAt: time.Now().Add(tokenExpiry),
 	}
+	tokenMu.Unlock()
 	return token
 }
 
 func GetUserByToken(token string) *models.User {
+	tokenMu.RLock()
 	entry, ok := DB.Tokens[token]
+	tokenMu.RUnlock()
 	if !ok || time.Now().After(entry.ExpiresAt) {
 		if ok {
+			tokenMu.Lock()
 			delete(DB.Tokens, token)
+			tokenMu.Unlock()
 		}
 		return nil
 	}

@@ -68,7 +68,13 @@ func (rl *rateLimiter) allow(key string) bool {
 
 func RateLimitMiddleware(rl *rateLimiter, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		key := r.RemoteAddr
+		key := r.Header.Get("X-Forwarded-For")
+		if key == "" {
+			key = r.Header.Get("X-Real-IP")
+		}
+		if key == "" {
+			key = r.RemoteAddr
+		}
 		if !rl.allow(key) {
 			Error(w, 429, "Too many requests, please try again later")
 			return

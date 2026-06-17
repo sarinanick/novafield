@@ -376,10 +376,9 @@ func SyncCoworkingTimers() {
 			continue
 		}
 		elapsed := int(now.Sub(resumed).Seconds())
-		original := s.TimerState.Remaining + elapsed
 		newRemaining := s.TimerState.Remaining
 		if elapsed > 0 {
-			newRemaining = original - elapsed
+			newRemaining = s.TimerState.Remaining - elapsed
 			if newRemaining < 0 {
 				newRemaining = 0
 			}

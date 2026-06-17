@@ -11,6 +11,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import { worldEngine } from "@/lib/world-engine";
 import { api } from "@/lib/api";
+import { API_BASE } from "@/lib/utils";
 
 interface WorldUser {
   id: string;
@@ -284,7 +285,7 @@ export default function WorldPage() {
   const fetchFloors = useCallback(async () => {
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch("http://localhost:3001/api/v1/floors", { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+      const res = await fetch(`${API_BASE}/floors`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
       if (res.ok) { const data = await res.json(); setFloors(data); worldEngine.setFloors(data); }
     } catch {}
   }, []);
@@ -292,7 +293,7 @@ export default function WorldPage() {
   const fetchDesks = useCallback(async () => {
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch("http://localhost:3001/api/v1/desks", { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+      const res = await fetch(`${API_BASE}/desks`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
       if (res.ok) { const data = await res.json(); setDesks(data); }
     } catch {}
   }, []);
@@ -359,23 +360,23 @@ export default function WorldPage() {
     }
   }, [fetchCoworkingSessions]);
 
-  const connectSpotify = useCallback(() => { window.location.href = `http://localhost:3001/api/v1/spotify/auth`; }, []);
+  const connectSpotify = useCallback(() => { window.location.href = `${API_BASE}/spotify/auth`; }, []);
 
   const fetchSpotifyStatus = useCallback(async () => {
     try {
       const token = localStorage.getItem("token");
       if (!token) return;
-      const res = await fetch("http://localhost:3001/api/v1/spotify/status", { headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch(`${API_BASE}/spotify/status`, { headers: { Authorization: `Bearer ${token}` } });
       if (res.ok) { const data = await res.json(); setSpotifyConnected(data.connected); setSpotifyTrack(data.track || null); }
     } catch {}
   }, []);
 
   const toggleSpotifySharing = useCallback(async (share: boolean) => {
-    try { const token = localStorage.getItem("token"); if (!token) return; await fetch("http://localhost:3001/api/v1/spotify/share", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ share }) }); setSpotifySharing(share); if (share) fetchSpotifyStatus(); } catch {}
+    try { const token = localStorage.getItem("token"); if (!token) return; await fetch(`${API_BASE}/spotify/share`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ share }) }); setSpotifySharing(share); if (share) fetchSpotifyStatus(); } catch {}
   }, [fetchSpotifyStatus]);
 
   const spotifyPlaybackControl = useCallback(async (action: string) => {
-    try { const token = localStorage.getItem("token"); if (!token) return; await fetch("http://localhost:3001/api/v1/spotify/playback", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ action }) }); setTimeout(fetchSpotifyStatus, 500); } catch {}
+    try { const token = localStorage.getItem("token"); if (!token) return; await fetch(`${API_BASE}/spotify/playback`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ action }) }); setTimeout(fetchSpotifyStatus, 500); } catch {}
   }, [fetchSpotifyStatus]);
 
   const toggleLockZone = useCallback((zone: string) => {
@@ -393,7 +394,8 @@ export default function WorldPage() {
     setMyId(userId);
     setMyName(userName);
 
-    const ws = new WebSocket(`ws://localhost:3001/api/v1/world/ws?userId=${userId}&userName=${encodeURIComponent(userName)}`);
+    const wsBase = process.env.NEXT_PUBLIC_WS_URL || API_BASE.replace(/^http/, "ws").replace("/api/v1", "");
+    const ws = new WebSocket(`${wsBase}/api/v1/world/ws?userId=${userId}&userName=${encodeURIComponent(userName)}`);
     wsRef.current = ws;
 
     ws.onopen = () => { setConnected(true); fetchFloors(); fetchDesks(); fetchCoworkingSessions(); };

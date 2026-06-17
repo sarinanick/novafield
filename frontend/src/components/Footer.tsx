@@ -5,16 +5,34 @@ import { Sparkles } from "lucide-react";
 import { AnimatedSection } from "./AnimatedSection";
 
 const footerLinks = {
-  Product: ["Features", "Pricing", "API Docs", "Enterprise", "Changelog"],
-  Resources: ["Documentation", "Tutorials", "Blog", "Community", "Status"],
-  Company: ["About", "Careers", "Privacy", "Terms", "Contact"],
+  Product: [
+    { label: "Features", href: "/#features" },
+    { label: "Pricing", href: "/#pricing" },
+    { label: "API Docs", href: "#" },
+    { label: "Enterprise", href: "#" },
+    { label: "Changelog", href: "#" },
+  ],
+  Resources: [
+    { label: "Documentation", href: "#" },
+    { label: "Tutorials", href: "#" },
+    { label: "Blog", href: "#" },
+    { label: "Community", href: "#" },
+    { label: "Status", href: "#" },
+  ],
+  Company: [
+    { label: "About", href: "#" },
+    { label: "Careers", href: "#" },
+    { label: "Privacy Policy", href: "#" },
+    { label: "Terms of Service", href: "#" },
+    { label: "Contact", href: "#" },
+  ],
 };
 
 const socials = [
-  { name: "X", href: "#" },
-  { name: "GitHub", href: "#" },
-  { name: "Discord", href: "#" },
-  { name: "YouTube", href: "#" },
+  { name: "X", href: "https://twitter.com" },
+  { name: "GitHub", href: "https://github.com" },
+  { name: "Discord", href: "https://discord.gg" },
+  { name: "YouTube", href: "https://youtube.com" },
 ];
 
 export default function Footer() {
@@ -57,9 +75,9 @@ export default function Footer() {
                 <h4 className="font-semibold mb-4 text-sm">{category}</h4>
                 <ul className="space-y-3">
                   {links.map((link) => (
-                    <li key={link}>
-                      <a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-                        {link}
+                    <li key={link.label}>
+                      <a href={link.href} className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                        {link.label}
                       </a>
                     </li>
                   ))}
@@ -71,9 +89,9 @@ export default function Footer() {
           <div className="flex flex-col md:flex-row justify-between items-center pt-8 border-t border-white/5">
             <p className="text-sm text-muted-foreground">© 2024 NovaField. All rights reserved.</p>
             <div className="flex gap-6 mt-4 md:mt-0">
-              <a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Privacy</a>
-              <a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Terms</a>
-              <a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Cookies</a>
+              <a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Privacy Policy</a>
+              <a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Terms of Service</a>
+              <a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Cookie Policy</a>
             </div>
           </div>
         </AnimatedSection>

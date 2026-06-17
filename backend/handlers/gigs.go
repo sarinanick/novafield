@@ -278,12 +278,13 @@ func DeleteGigHandler(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
+	var remaining []models.Package
 	for i := range d.Packages {
-		if d.Packages[i].GigID == id {
-			d.Packages = append(d.Packages[:i], d.Packages[i+1:]...)
-			i--
+		if d.Packages[i].GigID != id {
+			remaining = append(remaining, d.Packages[i])
 		}
 	}
+	d.Packages = remaining
 	d.Mu.Unlock()
 	d.Save()
 

@@ -258,7 +258,7 @@ func AdminDemoteMemberHandler(w http.ResponseWriter, r *http.Request, id string)
 			d.Mu.Unlock()
 			d.Save()
 			JSON(w, 200, H{
-				"message": "Member demoted to guest",
+				"message": "Member demoted to client",
 				"user":    pub,
 			})
 			return

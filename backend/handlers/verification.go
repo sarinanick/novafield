@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	crand "crypto/rand"
 	"encoding/json"
 	"math"
 	"net/http"
@@ -44,7 +45,7 @@ func SendEmailVerificationHandler(w http.ResponseWriter, r *http.Request) {
 	d.Mu.Unlock()
 	d.Save()
 
-	JSON(w, 200, H{"message": "Verification code sent to " + user.Email, "code": code})
+	JSON(w, 200, H{"message": "Verification code sent to " + user.Email})
 }
 
 func ConfirmEmailVerificationHandler(w http.ResponseWriter, r *http.Request) {
@@ -115,7 +116,7 @@ func SendPhoneVerificationHandler(w http.ResponseWriter, r *http.Request) {
 	d.Mu.Unlock()
 	d.Save()
 
-	JSON(w, 200, H{"message": "Verification code sent to " + req.Phone, "code": code})
+	JSON(w, 200, H{"message": "Verification code sent to " + req.Phone})
 }
 
 func ConfirmPhoneVerificationHandler(w http.ResponseWriter, r *http.Request) {
@@ -403,13 +404,11 @@ func AdminListPendingVerificationsHandler(w http.ResponseWriter, r *http.Request
 }
 
 func generateVerificationCode() string {
-	id := store.NewID()
+	b := make([]byte, 6)
+	crand.Read(b)
 	code := ""
-	for i := 0; i < 6 && i < len(id); i++ {
-		code += string(rune('0' + int(id[i]%10)))
-	}
-	for len(code) < 6 {
-		code += "0"
+	for i := 0; i < 6; i++ {
+		code += string(rune('0' + int(b[i]%10)))
 	}
 	return code
 }
