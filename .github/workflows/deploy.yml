@@ -19,9 +19,10 @@ env:
   GO_VERSION: "1.25"
   NODE_VERSION: "20"
   DARAKUB_API: "https://api.darakub.com"
+  REGISTRY: "registry.darakub.com/novafield"
 
 jobs:
-  # ── Validate ────────────────────────────────────────
+  # VALIDATE
   backend-lint:
     name: Lint Backend
     runs-on: ubuntu-latest
@@ -33,6 +34,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
+          cache: true
           cache-dependency-path: backend/go.sum
       - run: go vet ./...
 
@@ -47,6 +49,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
+          cache: true
           cache-dependency-path: backend/go.sum
       - run: go test ./handlers/ -v -count=1 -timeout 120s
 
@@ -66,9 +69,9 @@ jobs:
       - run: npm ci
       - run: npx tsc --noEmit
 
-  # ── Build ───────────────────────────────────────────
+  # BUILD
   build-backend:
-    name: Build Backend Image
+    name: Build Backend
     runs-on: ubuntu-latest
     needs: [backend-lint, backend-test]
     steps:
@@ -90,7 +93,7 @@ jobs:
           retention-days: 1
 
   build-frontend:
-    name: Build Frontend Image
+    name: Build Frontend
     runs-on: ubuntu-latest
     needs: [frontend-check]
     steps:
@@ -111,11 +114,132 @@ jobs:
           path: /tmp/frontend.tar.gz
           retention-days: 1
 
-  # ── Deploy Backend ──────────────────────────────────
-  deploy-backend:
-    name: Deploy Backend
+  # SECURITY SCAN
+  scan-images:
+    name: Scan Docker Images
     runs-on: ubuntu-latest
-    needs: [build-backend]
+    needs: [build-backend, build-frontend]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: image-backend
+          path: /tmp
+      - uses: actions/download-artifact@v4
+        with:
+          name: image-frontend
+          path: /tmp
+      - name: Scan backend image
+        run: |
+          docker load < /tmp/backend.tar.gz
+          docker save novafield-backend:${{ github.sha }} | trivy image --severity CRITICAL,HIGH --exit-code 1 -
+        continue-on-error: true
+      - name: Scan frontend image
+        run: |
+          docker load < /tmp/frontend.tar.gz
+          docker save novafield-frontend:${{ github.sha }} | trivy image --severity CRITICAL,HIGH --exit-code 1 -
+        continue-on-error: true
+
+  # DEPLOY STAGING
+  deploy-staging-backend:
+    name: Deploy Staging Backend
+    runs-on: ubuntu-latest
+    needs: [build-backend, scan-images]
+    environment:
+      name: staging
+      url: ${{ vars.DARAKUB_STAGING_BACKEND_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: image-backend
+          path: /tmp
+      - name: Push to registry
+        run: |
+          docker load < /tmp/backend.tar.gz
+          docker tag novafield-backend:${{ github.sha }} ${{ env.REGISTRY }}/backend:${{ github.sha }}
+          docker tag novafield-backend:${{ github.sha }} ${{ env.REGISTRY }}/backend:staging
+          echo "${{ secrets.DARAKUB_REGISTRY_PASS }}" | docker login registry.darakub.com -u darakub --password-stdin
+          docker push ${{ env.REGISTRY }}/backend:${{ github.sha }}
+          docker push ${{ env.REGISTRY }}/backend:staging
+      - name: Deploy
+        uses: ./.github/actions/darakub-deploy
+        with:
+          service-name: novafield-staging-backend
+          image: ${{ env.REGISTRY }}/backend:${{ github.sha }}
+          api-key: ${{ secrets.DARAKUB_API_KEY }}
+          env-vars: |
+            {
+              "PORT": "3001",
+              "FRONTEND_URL": "${{ vars.DARAKUB_STAGING_FRONTEND_URL }}",
+              "CORS_ORIGINS": "${{ vars.STAGING_CORS_ORIGINS }}"
+            }
+          health-path: "/api/v1/health"
+          health-port: "3001"
+      - name: Health check
+        uses: ./.github/actions/darakub-health
+        with:
+          url: ${{ vars.DARAKUB_STAGING_BACKEND_URL }}/api/v1/health
+          retries: 5
+          delay: 5
+
+  deploy-staging-frontend:
+    name: Deploy Staging Frontend
+    runs-on: ubuntu-latest
+    needs: [build-frontend, deploy-staging-backend]
+    environment:
+      name: staging
+      url: ${{ vars.DARAKUB_STAGING_FRONTEND_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: image-frontend
+          path: /tmp
+      - name: Push to registry
+        run: |
+          docker load < /tmp/frontend.tar.gz
+          docker tag novafield-frontend:${{ github.sha }} ${{ env.REGISTRY }}/frontend:${{ github.sha }}
+          docker tag novafield-frontend:${{ github.sha }} ${{ env.REGISTRY }}/frontend:staging
+          echo "${{ secrets.DARAKUB_REGISTRY_PASS }}" | docker login registry.darakub.com -u darakub --password-stdin
+          docker push ${{ env.REGISTRY }}/frontend:${{ github.sha }}
+          docker push ${{ env.REGISTRY }}/frontend:staging
+      - name: Deploy
+        uses: ./.github/actions/darakub-deploy
+        with:
+          service-name: novafield-staging-frontend
+          image: ${{ env.REGISTRY }}/frontend:${{ github.sha }}
+          api-key: ${{ secrets.DARAKUB_API_KEY }}
+          env-vars: |
+            {
+              "NEXT_PUBLIC_API_URL": "${{ vars.STAGING_NEXT_PUBLIC_API_URL }}",
+              "NEXT_PUBLIC_WS_URL": "${{ vars.STAGING_NEXT_PUBLIC_WS_URL }}"
+            }
+          health-path: "/"
+          health-port: "3000"
+      - name: Health check
+        uses: ./.github/actions/darakub-health
+        with:
+          url: ${{ vars.DARAKUB_STAGING_FRONTEND_URL }}
+          retries: 5
+          delay: 5
+
+  # APPROVE PRODUCTION
+  approve-production:
+    name: Approve Production Deploy
+    runs-on: ubuntu-latest
+    needs: [deploy-staging-backend, deploy-staging-frontend]
+    environment:
+      name: production
+    steps:
+      - name: Approved
+        run: echo "Production deployment approved"
+
+  # DEPLOY PRODUCTION
+  deploy-prod-backend:
+    name: Deploy Production Backend
+    runs-on: ubuntu-latest
+    needs: [approve-production, build-backend]
     environment:
       name: production
       url: ${{ vars.DARAKUB_BACKEND_URL }}
@@ -125,21 +249,19 @@ jobs:
         with:
           name: image-backend
           path: /tmp
-
-      - name: Push to Darakub Registry
+      - name: Push to registry
         run: |
           docker load < /tmp/backend.tar.gz
-          docker tag novafield-backend:${{ github.sha }} registry.darakub.com/novafield/backend:${{ github.sha }}
-          docker tag novafield-backend:${{ github.sha }} registry.darakub.com/novafield/backend:latest
+          docker tag novafield-backend:${{ github.sha }} ${{ env.REGISTRY }}/backend:${{ github.sha }}
+          docker tag novafield-backend:${{ github.sha }} ${{ env.REGISTRY }}/backend:latest
           echo "${{ secrets.DARAKUB_REGISTRY_PASS }}" | docker login registry.darakub.com -u darakub --password-stdin
-          docker push registry.darakub.com/novafield/backend:${{ github.sha }}
-          docker push registry.darakub.com/novafield/backend:latest
-
-      - name: Deploy via Darakub API
+          docker push ${{ env.REGISTRY }}/backend:${{ github.sha }}
+          docker push ${{ env.REGISTRY }}/backend:latest
+      - name: Deploy
         uses: ./.github/actions/darakub-deploy
         with:
           service-name: novafield-backend
-          image: registry.darakub.com/novafield/backend:${{ github.sha }}
+          image: ${{ env.REGISTRY }}/backend:${{ github.sha }}
           api-key: ${{ secrets.DARAKUB_API_KEY }}
           env-vars: |
             {
@@ -154,19 +276,25 @@ jobs:
           memory: "512Mi"
           health-path: "/api/v1/health"
           health-port: "3001"
-
-      - name: Verify backend health
+      - name: Health check
+        id: health
         uses: ./.github/actions/darakub-health
         with:
           url: ${{ vars.DARAKUB_BACKEND_URL }}/api/v1/health
           retries: 5
           delay: 5
+      - name: Auto-rollback on failure
+        if: failure() && steps.health.outcome == 'failure'
+        uses: ./.github/actions/darakub-deploy
+        with:
+          service-name: novafield-backend
+          image: ${{ env.REGISTRY }}/backend:latest
+          api-key: ${{ secrets.DARAKUB_API_KEY }}
 
-  # ── Deploy Frontend ─────────────────────────────────
-  deploy-frontend:
-    name: Deploy Frontend
+  deploy-prod-frontend:
+    name: Deploy Production Frontend
     runs-on: ubuntu-latest
-    needs: [build-frontend, deploy-backend]
+    needs: [deploy-prod-backend, build-frontend]
     environment:
       name: production
       url: ${{ vars.DARAKUB_FRONTEND_URL }}
@@ -176,21 +304,19 @@ jobs:
         with:
           name: image-frontend
           path: /tmp
-
-      - name: Push to Darakub Registry
+      - name: Push to registry
         run: |
           docker load < /tmp/frontend.tar.gz
-          docker tag novafield-frontend:${{ github.sha }} registry.darakub.com/novafield/frontend:${{ github.sha }}
-          docker tag novafield-frontend:${{ github.sha }} registry.darakub.com/novafield/frontend:latest
+          docker tag novafield-frontend:${{ github.sha }} ${{ env.REGISTRY }}/frontend:${{ github.sha }}
+          docker tag novafield-frontend:${{ github.sha }} ${{ env.REGISTRY }}/frontend:latest
           echo "${{ secrets.DARAKUB_REGISTRY_PASS }}" | docker login registry.darakub.com -u darakub --password-stdin
-          docker push registry.darakub.com/novafield/frontend:${{ github.sha }}
-          docker push registry.darakub.com/novafield/frontend:latest
-
-      - name: Deploy via Darakub API
+          docker push ${{ env.REGISTRY }}/frontend:${{ github.sha }}
+          docker push ${{ env.REGISTRY }}/frontend:latest
+      - name: Deploy
         uses: ./.github/actions/darakub-deploy
         with:
           service-name: novafield-frontend
-          image: registry.darakub.com/novafield/frontend:${{ github.sha }}
+          image: ${{ env.REGISTRY }}/frontend:${{ github.sha }}
           api-key: ${{ secrets.DARAKUB_API_KEY }}
           env-vars: |
             {
@@ -201,19 +327,26 @@ jobs:
           memory: "512Mi"
           health-path: "/"
           health-port: "3000"
-
-      - name: Verify frontend health
+      - name: Health check
+        id: health
         uses: ./.github/actions/darakub-health
         with:
           url: ${{ vars.DARAKUB_FRONTEND_URL }}
           retries: 5
           delay: 5
+      - name: Auto-rollback on failure
+        if: failure() && steps.health.outcome == 'failure'
+        uses: ./.github/actions/darakub-deploy
+        with:
+          service-name: novafield-frontend
+          image: ${{ env.REGISTRY }}/frontend:latest
+          api-key: ${{ secrets.DARAKUB_API_KEY }}
 
-  # ── Summary ─────────────────────────────────────────
+  # SUMMARY
   summary:
     name: Deploy Summary
     runs-on: ubuntu-latest
-    needs: [deploy-backend, deploy-frontend]
+    needs: [deploy-prod-backend, deploy-prod-frontend]
     if: always()
     steps:
       - name: Write summary
@@ -222,39 +355,36 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Service | Status | Image |" >> $GITHUB_STEP_SUMMARY
           echo "|---------|--------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Backend | ${{ needs.deploy-backend.result }} | novafield/backend:${{ github.sha }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Frontend | ${{ needs.deploy-frontend.result }} | novafield/frontend:${{ github.sha }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Backend | ${{ needs.deploy-prod-backend.result }} | ${{ github.sha }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Frontend | ${{ needs.deploy-prod-frontend.result }} | ${{ github.sha }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Commit: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
           echo "Branch: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
-          echo "Timestamp: $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
-
+          echo "Time: $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
       - name: Fail if deploy failed
-        if: needs.deploy-backend.result != 'success' || needs.deploy-frontend.result != 'success'
+        if: needs.deploy-prod-backend.result != 'success' || needs.deploy-prod-frontend.result != 'success'
         run: |
-          echo "::error::One or more deployments failed"
+          echo "::error::Production deployment failed"
           exit 1
 
-  # ── Rollback (manual trigger) ───────────────────────
+  # ROLLBACK (manual)
   rollback:
-    name: Rollback
+    name: Manual Rollback
     runs-on: ubuntu-latest
     if: github.event_name == 'workflow_dispatch'
     steps:
       - uses: actions/checkout@v4
-
       - name: Rollback backend
         if: github.event.inputs.service == 'all' || github.event.inputs.service == 'backend'
         uses: ./.github/actions/darakub-deploy
         with:
           service-name: novafield-backend
-          image: registry.darakub.com/novafield/backend:${{ github.event.inputs.image-tag }}
+          image: ${{ env.REGISTRY }}/backend:${{ github.event.inputs.image-tag }}
           api-key: ${{ secrets.DARAKUB_API_KEY }}
-
       - name: Rollback frontend
         if: github.event.inputs.service == 'all' || github.event.inputs.service == 'frontend'
         uses: ./.github/actions/darakub-deploy
         with:
           service-name: novafield-frontend
-          image: registry.darakub.com/novafield/frontend:${{ github.event.inputs.image-tag }}
+          image: ${{ env.REGISTRY }}/frontend:${{ github.event.inputs.image-tag }}
           api-key: ${{ secrets.DARAKUB_API_KEY }}
