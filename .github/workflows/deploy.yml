@@ -1,21 +1,18 @@
-name: NovaField CI/CD — Darakub
+name: Deploy to Darakub
 
 on:
   push:
-    branches: [main]
-  pull_request:
     branches: [main]
 
 env:
   GO_VERSION: "1.25"
   NODE_VERSION: "20"
   DARAKUB_API: "https://api.darakub.com"
-  DARAKUB_KEY: ${{ secrets.DARAKUB_API_KEY }}
 
 jobs:
-  # ── Backend Lint ────────────────────────────────────
+  # ── Validate ────────────────────────────────────────
   backend-lint:
-    name: Backend Lint
+    name: Lint Backend
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -28,9 +25,8 @@ jobs:
           cache-dependency-path: backend/go.sum
       - run: go vet ./...
 
-  # ── Backend Test ────────────────────────────────────
   backend-test:
-    name: Backend Test
+    name: Test Backend
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -43,9 +39,8 @@ jobs:
           cache-dependency-path: backend/go.sum
       - run: go test ./handlers/ -v -count=1 -timeout 120s
 
-  # ── Frontend Lint & Typecheck ───────────────────────
   frontend-check:
-    name: Frontend Check
+    name: Typecheck Frontend
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -60,64 +55,67 @@ jobs:
       - run: npm ci
       - run: npx tsc --noEmit
 
-  # ── Build Docker Images ─────────────────────────────
-  build-images:
-    name: Build Docker Images
+  # ── Build ───────────────────────────────────────────
+  build-backend:
+    name: Build Backend Image
     runs-on: ubuntu-latest
-    needs: [backend-lint, backend-test, frontend-check]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    strategy:
-      matrix:
-        include:
-          - context: ./backend
-            image: novafield-backend
-            tag: backend
-          - context: ./frontend
-            image: novafield-frontend
-            tag: frontend
+    needs: [backend-lint, backend-test]
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build image
-        uses: docker/build-push-action@v5
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v5
         with:
-          context: ${{ matrix.context }}
+          context: ./backend
           push: false
           load: true
-          tags: novafield/${{ matrix.image }}:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Save image as artifact
-        run: |
-          docker save novafield/${{ matrix.image }}:${{ github.sha }} | gzip > /tmp/${{ matrix.tag }}.tar.gz
-
+          tags: novafield-backend:${{ github.sha }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+      - run: docker save novafield-backend:${{ github.sha }} | gzip > /tmp/backend.tar.gz
       - uses: actions/upload-artifact@v4
         with:
-          name: docker-${{ matrix.tag }}
-          path: /tmp/${{ matrix.tag }}.tar.gz
+          name: image-backend
+          path: /tmp/backend.tar.gz
           retention-days: 1
 
-  # ── Deploy Backend to Darakub ───────────────────────
+  build-frontend:
+    name: Build Frontend Image
+    runs-on: ubuntu-latest
+    needs: [frontend-check]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          push: false
+          load: true
+          tags: novafield-frontend:${{ github.sha }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
+      - run: docker save novafield-frontend:${{ github.sha }} | gzip > /tmp/frontend.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: image-frontend
+          path: /tmp/frontend.tar.gz
+          retention-days: 1
+
+  # ── Deploy Backend ──────────────────────────────────
   deploy-backend:
     name: Deploy Backend
     runs-on: ubuntu-latest
-    needs: build-images
+    needs: [build-backend]
     environment:
       name: production
       url: ${{ vars.DARAKUB_BACKEND_URL }}
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/download-artifact@v4
         with:
-          name: docker-backend
+          name: image-backend
           path: /tmp
 
-      - name: Load and push image
+      - name: Push to Darakub Registry
         run: |
           docker load < /tmp/backend.tar.gz
           docker tag novafield-backend:${{ github.sha }} registry.darakub.com/novafield/backend:${{ github.sha }}
@@ -127,69 +125,48 @@ jobs:
           docker push registry.darakub.com/novafield/backend:latest
 
       - name: Deploy via Darakub API
-        run: |
-          curl -s -X POST "${{ env.DARAKUB_API }}/api/v1/services/deploy" \
-            -H "Authorization: Api-key ${{ env.DARAKUB_KEY }}" \
-            -H "Content-Type: application/json" \
-            -d '{
-              "serviceName": "novafield-backend",
-              "image": "registry.darakub.com/novafield/backend:${{ github.sha }}",
-              "env": {
-                "PORT": "3001",
-                "FRONTEND_URL": "${{ vars.FRONTEND_URL }}",
-                "CORS_ORIGINS": "${{ vars.CORS_ORIGINS }}"
-              },
-              "resources": {
-                "cpu": "1000m",
-                "memory": "512Mi"
-              },
-              "healthCheck": {
-                "path": "/api/v1/health",
-                "port": 3001,
-                "interval": 30
-              }
-            }'
+        uses: ./.github/actions/darakub-deploy
+        with:
+          service-name: novafield-backend
+          image: registry.darakub.com/novafield/backend:${{ github.sha }}
+          api-key: ${{ secrets.DARAKUB_API_KEY }}
+          env-vars: |
+            {
+              "PORT": "3001",
+              "FRONTEND_URL": "${{ vars.FRONTEND_URL }}",
+              "CORS_ORIGINS": "${{ vars.CORS_ORIGINS }}",
+              "SPOTIFY_CLIENT_ID": "${{ secrets.SPOTIFY_CLIENT_ID }}",
+              "SPOTIFY_CLIENT_SECRET": "${{ secrets.SPOTIFY_CLIENT_SECRET }}",
+              "SPOTIFY_REDIRECT_URI": "${{ vars.SPOTIFY_REDIRECT_URI }}"
+            }
+          cpu: "1000m"
+          memory: "512Mi"
+          health-path: "/api/v1/health"
+          health-port: "3001"
 
-      - name: Wait for deployment
-        run: |
-          echo "Waiting for backend to be ready..."
-          for i in $(seq 1 30); do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-              -H "Authorization: Api-key ${{ env.DARAKUB_KEY }}" \
-              "${{ env.DARAKUB_API }}/api/v1/services/novafield-backend/status" || true)
-            if [ "$STATUS" = "200" ]; then
-              echo "Backend is ready!"
-              exit 0
-            fi
-            echo "Attempt $i/30 — status: $STATUS"
-            sleep 10
-          done
-          echo "Deployment timed out"
-          exit 1
+      - name: Verify backend health
+        uses: ./.github/actions/darakub-health
+        with:
+          url: ${{ vars.DARAKUB_BACKEND_URL }}/api/v1/health
+          retries: 5
+          delay: 5
 
-      - name: Health check
-        run: |
-          sleep 5
-          curl -sf "${{ vars.DARAKUB_BACKEND_URL }}/api/v1/health" || exit 1
-          echo "Backend health check passed!"
-
-  # ── Deploy Frontend to Darakub ──────────────────────
+  # ── Deploy Frontend ─────────────────────────────────
   deploy-frontend:
     name: Deploy Frontend
     runs-on: ubuntu-latest
-    needs: [build-images, deploy-backend]
+    needs: [build-frontend, deploy-backend]
     environment:
       name: production
       url: ${{ vars.DARAKUB_FRONTEND_URL }}
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/download-artifact@v4
         with:
-          name: docker-frontend
+          name: image-frontend
           path: /tmp
 
-      - name: Load and push image
+      - name: Push to Darakub Registry
         run: |
           docker load < /tmp/frontend.tar.gz
           docker tag novafield-frontend:${{ github.sha }} registry.darakub.com/novafield/frontend:${{ github.sha }}
@@ -199,66 +176,50 @@ jobs:
           docker push registry.darakub.com/novafield/frontend:latest
 
       - name: Deploy via Darakub API
-        run: |
-          curl -s -X POST "${{ env.DARAKUB_API }}/api/v1/services/deploy" \
-            -H "Authorization: Api-key ${{ env.DARAKUB_KEY }}" \
-            -H "Content-Type: application/json" \
-            -d '{
-              "serviceName": "novafield-frontend",
-              "image": "registry.darakub.com/novafield/frontend:${{ github.sha }}",
-              "env": {
-                "NEXT_PUBLIC_API_URL": "${{ vars.NEXT_PUBLIC_API_URL }}",
-                "NEXT_PUBLIC_WS_URL": "${{ vars.NEXT_PUBLIC_WS_URL }}"
-              },
-              "resources": {
-                "cpu": "500m",
-                "memory": "512Mi"
-              },
-              "healthCheck": {
-                "path": "/",
-                "port": 3000,
-                "interval": 30
-              }
-            }'
+        uses: ./.github/actions/darakub-deploy
+        with:
+          service-name: novafield-frontend
+          image: registry.darakub.com/novafield/frontend:${{ github.sha }}
+          api-key: ${{ secrets.DARAKUB_API_KEY }}
+          env-vars: |
+            {
+              "NEXT_PUBLIC_API_URL": "${{ vars.NEXT_PUBLIC_API_URL }}",
+              "NEXT_PUBLIC_WS_URL": "${{ vars.NEXT_PUBLIC_WS_URL }}"
+            }
+          cpu: "500m"
+          memory: "512Mi"
+          health-path: "/"
+          health-port: "3000"
 
-      - name: Wait for deployment
-        run: |
-          echo "Waiting for frontend to be ready..."
-          for i in $(seq 1 30); do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-              -H "Authorization: Api-key ${{ env.DARAKUB_KEY }}" \
-              "${{ env.DARAKUB_API }}/api/v1/services/novafield-frontend/status" || true)
-            if [ "$STATUS" = "200" ]; then
-              echo "Frontend is ready!"
-              exit 0
-            fi
-            echo "Attempt $i/30 — status: $STATUS"
-            sleep 10
-          done
-          echo "Deployment timed out"
-          exit 1
+      - name: Verify frontend health
+        uses: ./.github/actions/darakub-health
+        with:
+          url: ${{ vars.DARAKUB_FRONTEND_URL }}
+          retries: 5
+          delay: 5
 
-      - name: Health check
-        run: |
-          sleep 5
-          curl -sf "${{ vars.DARAKUB_FRONTEND_URL }}" || exit 1
-          echo "Frontend health check passed!"
-
-  # ── Notify ──────────────────────────────────────────
-  notify:
-    name: Deployment Summary
+  # ── Summary ─────────────────────────────────────────
+  summary:
+    name: Deploy Summary
     runs-on: ubuntu-latest
     needs: [deploy-backend, deploy-frontend]
     if: always()
     steps:
-      - name: Deployment status
+      - name: Write summary
         run: |
           echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Service | Status |" >> $GITHUB_STEP_SUMMARY
-          echo "|---------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Backend | ${{ needs.deploy-backend.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Frontend | ${{ needs.deploy-frontend.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Service | Status | Image |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Backend | ${{ needs.deploy-backend.result }} | novafield/backend:${{ github.sha }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Frontend | ${{ needs.deploy-frontend.result }} | novafield/frontend:${{ github.sha }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Commit: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "Branch: \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "Commit: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "Branch: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "Timestamp: $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+
+      - name: Fail if deploy failed
+        if: needs.deploy-backend.result != 'success' || needs.deploy-frontend.result != 'success'
+        run: |
+          echo "::error::One or more deployments failed"
+          exit 1
