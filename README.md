@@ -1,5 +1,8 @@
 # NovaField AI
 
+[![CI](https://github.com/sarinanick/novafield/actions/workflows/ci.yml/badge.svg)](https://github.com/sarinanick/novafield/actions/workflows/ci.yml)
+[![Deploy](https://github.com/sarinanick/novafield/actions/workflows/deploy.yml/badge.svg)](https://github.com/sarinanick/novafield/actions/workflows/deploy.yml)
+
 An AI freelancer marketplace with virtual coworking space.
 
 ## Architecture

@@ -39,6 +39,3 @@ Thumbs.db
 
 # Logs
 *.log
-
-# Go
-go.sum

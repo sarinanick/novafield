@@ -20,8 +20,8 @@ func TestSendEmailVerification(t *testing.T) {
 	}
 
 	result := decodeJSON(rr)
-	if result["code"] == nil {
-		t.Fatal("expected verification code")
+	if result["message"] == nil {
+		t.Fatal("expected success message")
 	}
 }
 
@@ -46,8 +46,16 @@ func TestConfirmEmailVerification(t *testing.T) {
 	rr := newRecorder()
 	SendEmailVerificationHandler(rr, req)
 
-	result := decodeJSON(rr)
-	code := result["code"].(string)
+	d := database.GetDB()
+	d.Mu.RLock()
+	var code string
+	for _, v := range d.Verifications {
+		if v.Type == "email" && v.Status == "pending" {
+			code = v.Code
+			break
+		}
+	}
+	d.Mu.RUnlock()
 
 	body := jsonBody(map[string]interface{}{"code": code})
 	confirmReq := authRequest("POST", "/api/v1/verify/email/confirm", body, token)
@@ -101,8 +109,16 @@ func TestConfirmPhoneVerification(t *testing.T) {
 	rr := newRecorder()
 	SendPhoneVerificationHandler(rr, req)
 
-	result := decodeJSON(rr)
-	code := result["code"].(string)
+	d := database.GetDB()
+	d.Mu.RLock()
+	var code string
+	for _, v := range d.Verifications {
+		if v.Type == "phone" && v.Status == "pending" {
+			code = v.Code
+			break
+		}
+	}
+	d.Mu.RUnlock()
 
 	body := jsonBody(map[string]interface{}{"code": code})
 	confirmReq := authRequest("POST", "/api/v1/verify/phone/confirm", body, token)
@@ -204,8 +220,16 @@ func TestGetTrustScore_WithEmailVerified(t *testing.T) {
 	emailRR := newRecorder()
 	SendEmailVerificationHandler(emailRR, emailReq)
 
-	result := decodeJSON(emailRR)
-	code := result["code"].(string)
+	d := database.GetDB()
+	d.Mu.RLock()
+	var code string
+	for _, v := range d.Verifications {
+		if v.Type == "email" && v.Status == "pending" {
+			code = v.Code
+			break
+		}
+	}
+	d.Mu.RUnlock()
 
 	body := jsonBody(map[string]interface{}{"code": code})
 	confirmReq := authRequest("POST", "/api/v1/verify/email/confirm", body, token)
@@ -310,7 +334,16 @@ func TestVerification_FullLifecycle(t *testing.T) {
 	if emailRR.Code != 200 {
 		t.Fatalf("send email: expected 200, got %d", emailRR.Code)
 	}
-	emailCode := decodeJSON(emailRR)["code"].(string)
+
+	d := database.GetDB()
+	d.Mu.RLock()
+	var emailCode, phoneCode string
+	for _, v := range d.Verifications {
+		if v.UserID == user.ID && v.Type == "email" && v.Status == "pending" {
+			emailCode = v.Code
+		}
+	}
+	d.Mu.RUnlock()
 
 	confirmBody := jsonBody(map[string]interface{}{"code": emailCode})
 	confirmReq := authRequest("POST", "/api/v1/verify/email/confirm", confirmBody, token)
@@ -326,7 +359,14 @@ func TestVerification_FullLifecycle(t *testing.T) {
 	phoneRR := newRecorder()
 	SendPhoneVerificationHandler(phoneRR, phoneReq)
 
-	phoneCode := decodeJSON(phoneRR)["code"].(string)
+	d.Mu.RLock()
+	for _, v := range d.Verifications {
+		if v.UserID == user.ID && v.Type == "phone" && v.Status == "pending" {
+			phoneCode = v.Code
+		}
+	}
+	d.Mu.RUnlock()
+
 	phoneConfirmBody := jsonBody(map[string]interface{}{"code": phoneCode})
 	phoneConfirmReq := authRequest("POST", "/api/v1/verify/phone/confirm", phoneConfirmBody, token)
 	phoneConfirmRR := newRecorder()
