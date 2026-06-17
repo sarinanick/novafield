@@ -3,6 +3,17 @@ name: Deploy to Darakub
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      service:
+        description: "Service to rollback"
+        type: choice
+        options:
+          - all
+          - backend
+          - frontend
+      image-tag:
+        description: "Image tag to rollback to"
 
 env:
   GO_VERSION: "1.25"
@@ -223,3 +234,27 @@ jobs:
         run: |
           echo "::error::One or more deployments failed"
           exit 1
+
+  # ── Rollback (manual trigger) ───────────────────────
+  rollback:
+    name: Rollback
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rollback backend
+        if: github.event.inputs.service == 'all' || github.event.inputs.service == 'backend'
+        uses: ./.github/actions/darakub-deploy
+        with:
+          service-name: novafield-backend
+          image: registry.darakub.com/novafield/backend:${{ github.event.inputs.image-tag }}
+          api-key: ${{ secrets.DARAKUB_API_KEY }}
+
+      - name: Rollback frontend
+        if: github.event.inputs.service == 'all' || github.event.inputs.service == 'frontend'
+        uses: ./.github/actions/darakub-deploy
+        with:
+          service-name: novafield-frontend
+          image: registry.darakub.com/novafield/frontend:${{ github.event.inputs.image-tag }}
+          api-key: ${{ secrets.DARAKUB_API_KEY }}
