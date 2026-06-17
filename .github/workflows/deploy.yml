@@ -121,11 +121,11 @@ jobs:
     needs: [build-backend, build-frontend]
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: image-backend
           path: /tmp
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: image-frontend
           path: /tmp
@@ -150,7 +150,7 @@ jobs:
       url: ${{ vars.DARAKUB_STAGING_BACKEND_URL }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: image-backend
           path: /tmp
@@ -192,7 +192,7 @@ jobs:
       url: ${{ vars.DARAKUB_STAGING_FRONTEND_URL }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: image-frontend
           path: /tmp
@@ -245,7 +245,7 @@ jobs:
       url: ${{ vars.DARAKUB_BACKEND_URL }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: image-backend
           path: /tmp
@@ -300,7 +300,7 @@ jobs:
       url: ${{ vars.DARAKUB_FRONTEND_URL }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: image-frontend
           path: /tmp
