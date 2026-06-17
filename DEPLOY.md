@@ -604,29 +604,30 @@ ss -tlnp | grep -E '300[01]'
 ### Pipeline Architecture
 
 ```
-Push to main
-    │
-    ├──→ [backend-lint]     go vet
-    ├──→ [backend-test]     go test ./handlers/
-    ├──→ [frontend-check]   tsc --noEmit
-    │         │
-    │    (all pass)
-    │         │
-    ├──→ [build-backend]    Docker build + cache
-    ├──→ [build-frontend]   Docker build + cache
-    │         │
-    │    (images ready)
-    │         │
-    ├──→ [deploy-backend]   Push → Darakub API → Health check
-    │         │
-    │    (backend healthy)
-    │         │
-    ├──→ [deploy-frontend]  Push → Darakub API → Health check
-    │         │
-    │    (all done)
-    │         │
-    └──→ [summary]          Deployment report
+PR → CI (lint + test + typecheck + security scan)
+Push to main → CD:
+  ├── Build Images (parallel, GHA cache)
+  ├── Security Scan (Trivy)
+  ├── Deploy Staging (auto)
+  ├── Health Check Staging
+  ├── Approve Production (manual gate)
+  ├── Deploy Production
+  ├── Health Check Production
+  ├── Auto-Rollback (if health fails)
+  └── Summary
 ```
+
+### Pipeline Features
+
+| Feature | Status |
+|---------|--------|
+| Go module caching | setup-go + GOMODCACHE |
+| Docker layer caching | BuildKit GHA cache |
+| Security scanning | Trivy + npm audit + golangci-lint |
+| Multi-environment | staging + production |
+| Auto-rollback | health check → rollback on failure |
+| Manual rollback | workflow_dispatch with service/tag selection |
+| Dependency updates | Dependabot (weekly) |
 
 ### Authentication Header
 
