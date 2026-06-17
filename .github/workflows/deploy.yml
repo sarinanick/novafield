@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 env:
-  GO_VERSION: "1.23"
+  GO_VERSION: "1.25"
   NODE_VERSION: "20"
   DARAKUB_API: "https://api.darakub.com"
   DARAKUB_KEY: ${{ secrets.DARAKUB_API_KEY }}
